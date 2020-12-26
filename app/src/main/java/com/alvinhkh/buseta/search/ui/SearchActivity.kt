@@ -2,8 +2,7 @@ package com.alvinhkh.buseta.search.ui
 
 
 import android.app.SearchManager
-import androidx.lifecycle.Observer
-import androidx.lifecycle.ViewModelProviders
+import androidx.lifecycle.ViewModelProvider
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -30,7 +29,6 @@ import com.alvinhkh.buseta.mtr.ui.MtrBusActivity
 import com.alvinhkh.buseta.kmb.ui.KmbActivity
 import com.alvinhkh.buseta.lwb.ui.LwbActivity
 import com.alvinhkh.buseta.route.model.RouteStop
-import com.alvinhkh.buseta.mtr.ui.AESBusActivity
 import com.alvinhkh.buseta.mtr.ui.MtrStationActivity
 import com.alvinhkh.buseta.nlb.ui.NlbActivity
 import com.alvinhkh.buseta.nwst.ui.NwstActivity
@@ -98,7 +96,7 @@ class SearchActivity : AppCompatActivity() {
         }
 
         with(provider_group) {
-            val companyCodes = arrayListOf(C.PROVIDER.KMB, C.PROVIDER.CTB, C.PROVIDER.NWFB, C.PROVIDER.NLB, C.PROVIDER.AESBUS, C.PROVIDER.LRTFEEDER)
+            val companyCodes = arrayListOf(C.PROVIDER.KMB, C.PROVIDER.CTB, C.PROVIDER.NWFB, C.PROVIDER.NLB, C.PROVIDER.LRTFEEDER)
             val chipListener = CompoundButton.OnCheckedChangeListener { buttonView, isChecked ->
                 val companyCode = buttonView.tag as String
                 if (companyCode.isEmpty()) return@OnCheckedChangeListener
@@ -125,7 +123,7 @@ class SearchActivity : AppCompatActivity() {
             }
         }
 
-        viewModel = ViewModelProviders.of(this).get(RouteListViewModel::class.java)
+        viewModel = ViewModelProvider(this).get(RouteListViewModel::class.java)
         with(recycler_view) {
             addItemDecoration(PinnedHeaderItemDecoration())
             layoutManager = LinearLayoutManager(context)
@@ -206,7 +204,7 @@ class SearchActivity : AppCompatActivity() {
         queryLiveData?.removeObservers(this@SearchActivity)
         searchQueryText = route
         queryLiveData = viewModel.liveData(route, companyCodes)
-        queryLiveData?.observe(this@SearchActivity, Observer { list ->
+        queryLiveData?.observe(this@SearchActivity, { list ->
             viewAdapter.clear()
             val providerSearchList = arrayListOf<String>()
             listOf(C.PROVIDER.CTB, C.PROVIDER.KMB, C.PROVIDER.LWB, C.PROVIDER.NLB, C.PROVIDER.NWFB).forEach {
@@ -269,7 +267,6 @@ class SearchActivity : AppCompatActivity() {
     private fun providerIntent(companyCode: String): Intent {
         var intent: Intent
         when (companyCode) {
-            C.PROVIDER.AESBUS -> intent = Intent(applicationContext, AESBusActivity::class.java)
             C.PROVIDER.CTB, C.PROVIDER.NWFB, C.PROVIDER.NWST -> intent = Intent(applicationContext, NwstActivity::class.java)
             C.PROVIDER.LRTFEEDER -> intent = Intent(applicationContext, MtrBusActivity::class.java)
             C.PROVIDER.MTR -> intent = Intent(applicationContext, MtrStationActivity::class.java)

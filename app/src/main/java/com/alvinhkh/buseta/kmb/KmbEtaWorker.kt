@@ -60,15 +60,13 @@ class KmbEtaWorker(private val context : Context, params : WorkerParameters)
         val timeNow = System.currentTimeMillis()
 
         try {
-            if (PreferenceUtil.isUsingKmbWebEtaApi(context)) {
-                val now = Calendar.getInstance()
-                val unixTime = now.timeInMillis.toString().dropLast(3) + "080"
-                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.80.", Locale.ENGLISH)
+            if (false && PreferenceUtil.isUsingKmbWebEtaApi(context)) {
+                val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SS.", Locale.ENGLISH)
                 sdf.timeZone = TimeZone.getTimeZone("UTC")
-                val t = sdf.format(now.time)
+                val t = sdf.format(timeNow)
                 val key = "--31${t}13--"
-                val rawToken = routeStop.routeNo + key + routeStop.routeSequence + key + routeStop.routeServiceType + key + routeStop.stopId?.replace("-", "") + key + routeStop.sequence + key + unixTime;
-                val token = "EA${Base64.encodeToString(rawToken.toByteArray(), Base64.DEFAULT)}"
+                val rawToken = routeStop.routeNo + key + routeStop.routeSequence + key + Integer.parseInt(routeStop.routeServiceType!!) + key + routeStop.stopId?.replace("-", "") + key + routeStop.sequence + key + timeNow
+                val token = "E${Base64.encodeToString(rawToken.toByteArray(), Base64.NO_WRAP)}"
                 val response = kmbService.eta("1", token, t).execute()
 
                 if (!response.isSuccessful) {
@@ -105,17 +103,21 @@ class KmbEtaWorker(private val context : Context, params : WorkerParameters)
                     }
                 }
             } else {
+                val encodedString: String = KmbSecret.encodeString("CCNzfiQsIDQ8MQ==", "KMBMainView") +
+                        KmbSecret.encodeString("ES4YfCcoJwUKEzN4", "KMBMainView") +
+                        KmbSecret.encodeString("fnwbCDQfJxMaFS4=", "KMBMainView") +
+                        KmbSecret.encodeString("ej0GBw0jCxJaXUo=", "KMBMainView")
                 val simpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault())
                 simpleDateFormat.timeZone = TimeZone.getTimeZone("UTC")
                 val instance = Calendar.getInstance()
                 instance.timeInMillis = System.currentTimeMillis() + (-1000L)
                 val secretHolder: KmbSecret.SecretHolder = KmbSecret
-                        .getSecrets(simpleDateFormat.format(instance.time), "")
-                val decryptedDate = KmbSecret.decrypt(secretHolder.apiKey, secretHolder.verifier)
+                        .getSecrets(simpleDateFormat.format(instance.time), "", encodedString)
+                val decryptedDate = KmbSecret.decrypt(secretHolder.apiKey, secretHolder.verifier, encodedString)
                 val queryString = "?lang=tc&route=${routeStop.routeNo?:""}&bound=${routeStop.routeSequence?:""}" +
                         "&stop_seq=${routeStop.sequence?:""}&service_type=${routeStop.routeServiceType?.toInt()?:0}" +
                         "&vendor_id=${KmbSecret.getVendorId(context)}&apiKey=${secretHolder.apiKey}&ctr=${secretHolder.ctr}"
-                val d = KmbSecret.getSecrets(queryString, secretHolder.ctr).apiKey
+                val d = KmbSecret.getSecrets(queryString, secretHolder.ctr, encodedString).apiKey
                 Timber.d("%s %s %s", secretHolder, decryptedDate, d)
                 val response = kmbEtaService.eta(KmbEtaRequest(d, secretHolder.ctr)).execute()
 

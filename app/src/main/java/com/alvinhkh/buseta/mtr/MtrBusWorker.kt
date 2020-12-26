@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.SparseArray
 import android.util.SparseIntArray
 import androidx.core.util.set
+import androidx.preference.PreferenceManager
 import androidx.room.Room
 import androidx.work.Data
 import androidx.work.Worker
@@ -18,7 +19,9 @@ import com.alvinhkh.buseta.route.dao.RouteDatabase
 import com.alvinhkh.buseta.route.model.RouteStop
 import com.alvinhkh.buseta.search.dao.SuggestionDatabase
 import com.alvinhkh.buseta.search.model.Suggestion
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import timber.log.Timber
+import java.io.File
 import java.lang.Exception
 
 class MtrBusWorker(context : Context, params : WorkerParameters)
@@ -27,6 +30,10 @@ class MtrBusWorker(context : Context, params : WorkerParameters)
     private val routeDatabase = RouteDatabase.getInstance(context)
 
     private val suggestionDatabase = SuggestionDatabase.getInstance(context)
+
+    private val firebaseRemoteConfig = FirebaseRemoteConfig.getInstance()
+
+    private val preferences = PreferenceManager.getDefaultSharedPreferences(context)
 
     override fun doWork(): Result {
         val manualUpdate = inputData.getBoolean(C.EXTRA.MANUAL, false)
@@ -40,10 +47,20 @@ class MtrBusWorker(context : Context, params : WorkerParameters)
         val stopList = arrayListOf<RouteStop>()
         val timeNow = System.currentTimeMillis() / 1000
 
+        val busDatabaseFileName = firebaseRemoteConfig.getString("mtr_bus_database_file")
+        val lastBusDatabaseFileName = preferences.getString("mtr_bus_database_file", "")?: ""
+        if (busDatabaseFileName.isEmpty()) {
+            return Result.failure(outputData)
+        }
+        if (!manualUpdate && lastBusDatabaseFileName == busDatabaseFileName) {
+            Timber.d("MTR Bus database: %s", busDatabaseFileName)
+            return Result.success(outputData)
+        }
+
         applicationContext.deleteDatabase("E_Bus.db")
         val database = Room.databaseBuilder(applicationContext, MtrBusDatabase::class.java, "E_Bus.db")
                 .allowMainThreadQueries()
-                .createFromAsset("database/E_Bus_20191209.db")
+                .createFromFile(File("${applicationContext.cacheDir}/$busDatabaseFileName"))
                 .build()
 
         val mtrBusFareArray = SparseArray<MtrBusFare>()
@@ -152,6 +169,13 @@ class MtrBusWorker(context : Context, params : WorkerParameters)
         if (routeDatabase?.routeStopDao()?.insert(stopList)?.size?:0 > 0) {
             routeDatabase?.routeStopDao()?.delete(companyCode, timeNow)
         }
+
+        routeDatabase?.routeDao()?.delete(C.PROVIDER.AESBUS, timeNow)
+        routeDatabase?.routeStopDao()?.delete(C.PROVIDER.AESBUS, timeNow)
+
+        val editor = preferences.edit()
+        editor.putString("mtr_bus_database_file", busDatabaseFileName)
+        editor.apply()
 
         return Result.success(outputData)
     }

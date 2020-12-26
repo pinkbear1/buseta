@@ -1,6 +1,8 @@
 package com.alvinhkh.buseta.service
 
-import android.app.*
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -14,14 +16,14 @@ import androidx.work.WorkManager
 import com.alvinhkh.buseta.Api
 import com.alvinhkh.buseta.C
 import com.alvinhkh.buseta.R
-import com.alvinhkh.buseta.mtr.MtrLineWorker
 import com.alvinhkh.buseta.datagovhk.RtNwstWorker
 import com.alvinhkh.buseta.datagovhk.TdWorker
 import com.alvinhkh.buseta.follow.dao.FollowDatabase
 import com.alvinhkh.buseta.kmb.KmbRouteWorker
 import com.alvinhkh.buseta.lwb.LwbRouteWorker
-import com.alvinhkh.buseta.mtr.AESBusWorker
 import com.alvinhkh.buseta.mtr.MtrBusWorker
+import com.alvinhkh.buseta.mtr.MtrLineWorker
+import com.alvinhkh.buseta.mtr.MtrResourceWorker
 import com.alvinhkh.buseta.nlb.NlbWorker
 import com.alvinhkh.buseta.nwst.NwstRouteWorker
 import com.alvinhkh.buseta.route.dao.RouteDatabase
@@ -37,6 +39,8 @@ class ProviderUpdateService: Service() {
 
     private lateinit var sharedPreferences: SharedPreferences
 
+    private lateinit var workManager: WorkManager
+
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
@@ -46,20 +50,22 @@ class ProviderUpdateService: Service() {
         followDatabase = FollowDatabase.getInstance(this)!!
         routeDatabase = RouteDatabase.getInstance(this)!!
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        workManager = WorkManager.getInstance()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager?
+            notificationManager?.deleteNotificationChannel("CHANNEL_ID_UPDATE")
             if (notificationManager?.getNotificationChannel(C.NOTIFICATION.CHANNEL_UPDATE) == null) {
                 val notificationChannel = NotificationChannel(C.NOTIFICATION.CHANNEL_UPDATE,
-                        getString(R.string.channel_name_update), NotificationManager.IMPORTANCE_DEFAULT)
+                        getString(R.string.channel_name_update), NotificationManager.IMPORTANCE_MIN)
                 notificationChannel.description = getString(R.string.channel_description_update)
                 notificationChannel.enableLights(false)
                 notificationChannel.enableVibration(false)
-                notificationChannel.importance = NotificationManager.IMPORTANCE_DEFAULT
+                notificationChannel.setSound(null, null)
+                notificationChannel.setShowBadge(false)
                 notificationManager?.createNotificationChannel(notificationChannel)
             }
         }
-        startForegroundNotification(100, 0)
     }
 
     private fun startForegroundNotification(max: Int, progress: Int) {
@@ -67,12 +73,16 @@ class ProviderUpdateService: Service() {
         val builder = NotificationCompat.Builder(this, C.NOTIFICATION.CHANNEL_UPDATE)
         builder.setOnlyAlertOnce(true)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setPriority(NotificationCompat.PRIORITY_MIN)
                 .setSmallIcon(R.drawable.ic_outline_directions_bus_24dp)
-                .setCategory(NotificationCompat.CATEGORY_SYSTEM)
                 .setShowWhen(false)
+                .setSound(null)
                 .setProgress(max, progress, progress <= 0)
-                .setContentTitle(getString(R.string.channel_description_update))
+                .setContentTitle(getString(if (max == 100 && progress == 0) {
+                    R.string.channel_name_update
+                } else {
+                    R.string.channel_description_update
+                }))
                 .setContentText(if (progress <= 0) {
                     null
                 } else {
@@ -98,22 +108,24 @@ class ProviderUpdateService: Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        WorkManager.getInstance().cancelAllWorkByTag(TAG)
+        workManager.cancelAllWorkByTag(TAG)
 
         val routeCount = routeDatabase.routeDao().count()
         val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         val timeNow = System.currentTimeMillis() / 1000
         val savedTime = sharedPreferences.getLong("last_update_check", 0)
-        if (!manualUpdate && routeCount > 0 && timeNow < savedTime + 129600) {
+        if (!manualUpdate && routeCount > 0 && timeNow < savedTime + 259200) {
             Timber.d("recently updated and not manual update")
             stopSelf()
             return START_NOT_STICKY
         }
         sharedPreferences.edit().putLong("last_update_check", timeNow).apply()
 
-        WorkManager.getInstance().cancelAllWorkByTag("RouteList")
+        startForegroundNotification(100, 0)
+
+        workManager.cancelAllWorkByTag("RouteList")
         var workCount = 0
-        WorkManager.getInstance().getWorkInfosByTagLiveData(TAG).observeForever { workInfos ->
+        workManager.getWorkInfosByTagLiveData(TAG).observeForever { workInfos ->
             if (workCount == 0) {
                 workCount = workInfos.size
             }
@@ -131,7 +143,7 @@ class ProviderUpdateService: Service() {
                 i.putExtra(C.EXTRA.MANUAL, manualUpdate)
                 i.putExtra(C.EXTRA.MESSAGE_RID, R.string.message_database_updated)
                 applicationContext.sendBroadcast(i)
-                WorkManager.getInstance().cancelAllWorkByTag(TAG)
+                workManager.cancelAllWorkByTag(TAG)
                 updateFollowRoute(manualUpdate)
             }
         }
@@ -141,8 +153,7 @@ class ProviderUpdateService: Service() {
                 .build()
         val tdRequest = OneTimeWorkRequest.Builder(TdWorker::class.java)
                 .addTag(TAG).setInputData(dataTd).build()
-        WorkManager.getInstance()
-                .enqueue(tdRequest)
+        workManager.enqueue(tdRequest)
 
         try {
             val apiService = Api.retrofit.create(Api::class.java)
@@ -161,23 +172,17 @@ class ProviderUpdateService: Service() {
         } catch (ignored: Throwable) {
         }
 
-        val dataAesBus = Data.Builder()
-                .putBoolean(C.EXTRA.MANUAL, manualUpdate)
-                .putString(C.EXTRA.COMPANY_CODE, C.PROVIDER.AESBUS)
-                .build()
-        val aesBusRequest = OneTimeWorkRequest.Builder(AESBusWorker::class.java)
-                .addTag(TAG).setInputData(dataAesBus).build()
-        WorkManager.getInstance()
-                .enqueue(aesBusRequest)
-
         val dataMtrBus = Data.Builder()
                 .putBoolean(C.EXTRA.MANUAL, manualUpdate)
                 .putString(C.EXTRA.COMPANY_CODE, C.PROVIDER.LRTFEEDER)
                 .build()
+        val busMtrResourceRequest = OneTimeWorkRequest.Builder(MtrResourceWorker::class.java)
+                .addTag(TAG).setInputData(dataMtrBus).build()
         val mtrBusRequest = OneTimeWorkRequest.Builder(MtrBusWorker::class.java)
                 .addTag(TAG).setInputData(dataMtrBus).build()
-        WorkManager.getInstance()
-                .enqueue(mtrBusRequest)
+        workManager.beginWith(busMtrResourceRequest)
+                .then(mtrBusRequest)
+                .enqueue()
 
         val dataMtrLine = Data.Builder()
                 .putBoolean(C.EXTRA.MANUAL, manualUpdate)
@@ -185,8 +190,7 @@ class ProviderUpdateService: Service() {
                 .build()
         val mtrLineRequest = OneTimeWorkRequest.Builder(MtrLineWorker::class.java)
                 .addTag(TAG).setInputData(dataMtrLine).build()
-        WorkManager.getInstance()
-                .enqueue(mtrLineRequest)
+        workManager.enqueue(mtrLineRequest)
 
         val dataNlb = Data.Builder()
                 .putBoolean(C.EXTRA.MANUAL, manualUpdate)
@@ -194,8 +198,7 @@ class ProviderUpdateService: Service() {
                 .build()
         val nlbRequest = OneTimeWorkRequest.Builder(NlbWorker::class.java)
                 .addTag(TAG).setInputData(dataNlb).build()
-        WorkManager.getInstance()
-                .enqueue(nlbRequest)
+        workManager.enqueue(nlbRequest)
 
         return START_STICKY
     }
@@ -203,7 +206,7 @@ class ProviderUpdateService: Service() {
     private fun updateFollowRoute(manualUpdate: Boolean) {
         // TODO: check any route in follow list updated or removed
         val followTag = "FollowRoute"
-        WorkManager.getInstance().cancelAllWorkByTag(followTag)
+        workManager.cancelAllWorkByTag(followTag)
         val map = hashMapOf<String, Pair<String, String>>()
         val list = followDatabase.followDao().list()
         list.forEach { follow ->
@@ -246,7 +249,7 @@ class ProviderUpdateService: Service() {
         }
         if (requests.size > 0) {
             var workCount = 0
-            WorkManager.getInstance().getWorkInfosByTagLiveData(followTag).observeForever { workInfos ->
+            workManager.getWorkInfosByTagLiveData(followTag).observeForever { workInfos ->
                 if (workCount == 0) {
                     workCount = workInfos.size
                 }
@@ -259,11 +262,11 @@ class ProviderUpdateService: Service() {
                 }
                 startForegroundNotification(workInfos.size - workCount, finishedCount - workCount)
                 if (finishedCount >= workInfos.size) {
-                    WorkManager.getInstance().cancelAllWorkByTag(followTag)
+                    workManager.cancelAllWorkByTag(followTag)
                     stopSelf()
                 }
             }
-            WorkManager.getInstance().enqueue(requests)
+            workManager.enqueue(requests)
         } else {
             stopSelf()
         }

@@ -7,14 +7,18 @@ import android.text.TextUtils
 import android.util.Log
 import androidx.multidex.MultiDex
 import androidx.preference.PreferenceManager
+import com.alvinhkh.buseta.nwst.model.NwstQueryData
 import com.alvinhkh.buseta.utils.NightModeUtil
-import com.crashlytics.android.Crashlytics
-import com.crashlytics.android.answers.Answers
-import com.crashlytics.android.core.CrashlyticsCore
 import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.ktx.database
+import com.google.firebase.database.ktx.getValue
+import com.google.firebase.ktx.Firebase
 import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import com.google.firebase.remoteconfig.FirebaseRemoteConfigSettings
-import io.fabric.sdk.android.Fabric
 import okhttp3.OkHttpClient
 import org.osmdroid.config.Configuration
 import timber.log.Timber
@@ -51,25 +55,42 @@ class App : Application() {
                 .readTimeout(40, TimeUnit.SECONDS)
                 .build()
 
-        val crashlytics = Crashlytics.Builder()
-                .core(CrashlyticsCore.Builder().disabled(BuildConfig.DEBUG).build())
-                .build()
-        val fabric = Fabric.Builder(this)
-                .kits(crashlytics, Answers())
-                .debuggable(BuildConfig.DEBUG)
-                .build()
-        Fabric.with(fabric)
 
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         } else {
-            Timber.plant(CrashlyticsTree())
+            FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(true)
             FirebaseAnalytics.getInstance(this).setAnalyticsCollectionEnabled(true)
+            Timber.plant(CrashlyticsTree())
         }
         NightModeUtil.update(this)
 
         // set user agent to prevent getting banned from the osm servers
-        Configuration.getInstance().load(this, PreferenceManager.getDefaultSharedPreferences(this))
+        Configuration.getInstance().userAgentValue = System.getProperty("http.agent")
+
+        // Disk Persistence
+        Firebase.database.setPersistenceEnabled(true)
+        // Sync required settings
+        val database = Firebase.database
+        val preferences = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+        val nwstQueries = database.getReference("nwst_queries")
+        nwstQueries.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(dataSnapshot: DataSnapshot) {
+                val data = dataSnapshot.getValue<NwstQueryData>()
+                Timber.d("$data")
+                val editor = preferences.edit()
+                editor.putString("nwst_syscode5", data?.syscode5)
+                editor.putString("nwst_appId", data?.appId)
+                editor.putString("nwst_version", data?.version)
+                editor.putString("nwst_version2", data?.version2)
+                editor.putLong("nwst_lastUpdated", data?.lastUpdated?:0)
+                editor.apply()
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Timber.w(error.toException(), "Failed to read value.")
+            }
+        })
 
         var cacheExpiration = 3600L
         if (BuildConfig.DEBUG) {
@@ -99,8 +120,8 @@ class App : Application() {
     private class CrashlyticsTree : Timber.Tree() {
         override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
             if (priority == Log.VERBOSE || priority == Log.DEBUG) return
-            if (!TextUtils.isEmpty(message)) Crashlytics.log(priority, tag, message)
-            if (t != null) Crashlytics.logException(t)
+            if (!TextUtils.isEmpty(message)) FirebaseCrashlytics.getInstance().log(message)
+            if (t != null) FirebaseCrashlytics.getInstance().recordException(t)
         }
     }
 

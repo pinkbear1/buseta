@@ -1,9 +1,11 @@
 package com.alvinhkh.buseta.route.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
 import android.location.Location
+import android.net.Uri
 import android.os.Build
 import android.text.Html
 import androidx.fragment.app.FragmentActivity
@@ -20,6 +22,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.annotation.ColorInt
+import androidx.browser.customtabs.CustomTabsIntent
 import com.alvinhkh.buseta.C
 import com.alvinhkh.buseta.R
 import com.alvinhkh.buseta.arrivaltime.model.ArrivalTime
@@ -156,7 +160,6 @@ class RouteStopListViewAdapter(
                 itemView.findViewById<ImageView>(R.id.follow).visibility = if (routeStop.isFollow) View.VISIBLE else View.GONE
 
                 // ETA
-                var direction = ""
                 routeStop.etas.forEach { obj ->
                     val arrivalTime = ArrivalTime.estimate(itemView.context, obj)
                     if (arrivalTime.order.isNotEmpty()) {
@@ -278,38 +281,35 @@ class RouteStopListViewAdapter(
                         if (etaText.isNotEmpty()) {
                             etaText.setSpan(ForegroundColorSpan(colorInt!!), 0, etaText.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                         }
-                        if (arrivalTime.companyCode == C.PROVIDER.MTR) {
-                            if (direction != arrivalTime.direction) {
-                                if (pos == 0) {
-                                    itemView.findViewById<TextView>(R.id.eta).text = etaText
-                                } else {
-                                    itemView.findViewById<TextView>(R.id.eta2).text = etaText
-                                }
+                        when (pos) {
+                            0 -> {
+                                itemView.findViewById<TextView>(R.id.eta).text = etaText
                             }
-                        } else {
-                            when (pos) {
-                                0 -> {
-                                    itemView.findViewById<TextView>(R.id.eta).text = etaText
-                                }
-                                1 -> {
-                                    itemView.findViewById<TextView>(R.id.eta2).text = etaText
-                                }
-                                2 -> {
-                                    itemView.findViewById<TextView>(R.id.eta3).text = etaText
-                                }
-//                                else -> {
-//                                    etaText.insert(0, "  ")
-//                                    etaText.insert(0, itemView.findViewById<TextView>(R.id.eta3).text)
-//                                    itemView.findViewById<TextView>(R.id.eta3).text = etaText
-//                                }
+                            1 -> {
+                                itemView.findViewById<TextView>(R.id.eta2).text = etaText
                             }
+                            2 -> {
+                                itemView.findViewById<TextView>(R.id.eta3).text = etaText
+                            }
+//                            else -> {
+//                                etaText.insert(0, "  ")
+//                                etaText.insert(0, itemView.findViewById<TextView>(R.id.eta3).text)
+//                                itemView.findViewById<TextView>(R.id.eta3).text = etaText
+//                            }
                         }
                     }
-                    direction = arrivalTime.direction
                 }
             } else if (data.type == Data.TYPE_RAILWAY_STATION) {
                 val routeStop = data.obj as RouteStop
                 itemView.findViewById<TextView>(R.id.name).text = routeStop.name
+                if (!routeStop.stopId.isNullOrEmpty()) {
+                    itemView.findViewById<ImageView>(R.id.map_button).setOnClickListener {
+                        openLink(it.context,
+                                "https://www.mtr.com.hk/archive/en/services/maps/${routeStop.stopId?.toLowerCase(Locale.ROOT)}.pdf",
+                                ContextCompat.getColor(it.context, R.color.provider_mtr))
+                    }
+                    itemView.findViewById<ImageView>(R.id.map_button).visibility = View.VISIBLE
+                }
                 val scheduleList = itemView.findViewById<RecyclerView>(R.id.schedule_list)
                 val viewAdapter = MtrScheduleViewAdapter()
                 scheduleList.run {
@@ -342,6 +342,21 @@ class RouteStopListViewAdapter(
                 }
             } else {
                 itemView.findViewById<TextView>(R.id.note).visibility = View.GONE
+            }
+        }
+
+        private fun openLink(context: Context, url: String, @ColorInt colorInt: Int) {
+            val link = Uri.parse(url)
+            try {
+                val builder = CustomTabsIntent.Builder()
+                builder.setToolbarColor(colorInt)
+                val customTabsIntent = builder.build()
+                customTabsIntent.launchUrl(context, link)
+            } catch (ignored: Throwable) {
+                val intent = Intent(Intent.ACTION_VIEW, link)
+                if (intent.resolveActivity(context.packageManager) != null) {
+                    context.startActivity(intent)
+                }
             }
         }
     }

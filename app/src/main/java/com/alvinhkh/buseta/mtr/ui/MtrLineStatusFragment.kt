@@ -1,8 +1,7 @@
 package com.alvinhkh.buseta.mtr.ui
 
 import android.content.Intent
-import androidx.lifecycle.Observer
-import androidx.lifecycle.ViewModelProviders
+import androidx.lifecycle.ViewModelProvider
 import android.os.Bundle
 import android.view.*
 import com.google.android.material.floatingactionbutton.FloatingActionButton
@@ -13,10 +12,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
-import androidx.work.OneTimeWorkRequest
-import androidx.work.WorkManager
 import com.alvinhkh.buseta.R
-import com.alvinhkh.buseta.mtr.MtrLineWorker
 import com.alvinhkh.buseta.ui.image.ImageActivity
 import com.alvinhkh.buseta.utils.ConnectivityUtil
 
@@ -41,7 +37,7 @@ class MtrLineStatusFragment: Fragment(), SwipeRefreshLayout.OnRefreshListener {
         emptyView = rootView.findViewById(R.id.empty_view)
         emptyView.visibility = View.VISIBLE
         val emptyTextView = rootView.findViewById<TextView>(R.id.empty_text)
-        emptyTextView.text = getString(R.string.message_no_data)
+        emptyTextView.text = getString(R.string.updating)
         recyclerView = rootView.findViewById(R.id.recycler_view)
         viewAdapter = MtrLineStatusViewAdapter()
         swipeRefreshLayout.isRefreshing = true
@@ -50,11 +46,12 @@ class MtrLineStatusFragment: Fragment(), SwipeRefreshLayout.OnRefreshListener {
             layoutManager = LinearLayoutManager(context)
             adapter = viewAdapter
         }
-        val lineStatusViewModel = ViewModelProviders.of(this).get(MtrLineStatusViewModel::class.java)
-        lineStatusViewModel.getAsLiveData().observe(this, Observer { list ->
+        val lineStatusViewModel = ViewModelProvider(this).get(MtrLineStatusViewModel::class.java)
+        lineStatusViewModel.getAsLiveData().observe(viewLifecycleOwner, { list ->
             if (ConnectivityUtil.isConnected(context)) {
                 snackbar.dismiss()
             } else {
+                emptyTextView.text = getString(R.string.message_no_data)
                 snackbar.show()
             }
             if (!swipeRefreshLayout.isRefreshing) {
@@ -66,8 +63,8 @@ class MtrLineStatusFragment: Fragment(), SwipeRefreshLayout.OnRefreshListener {
                 swipeRefreshLayout.isRefreshing = false
             }
         })
-        val latestAlertViewModel = ViewModelProviders.of(this).get(MtrLatestAlertViewModel::class.java)
-        latestAlertViewModel.getAsLiveData().observe(this, Observer { list ->
+        val latestAlertViewModel = ViewModelProvider(this).get(MtrLatestAlertViewModel::class.java)
+        latestAlertViewModel.getAsLiveData().observe(viewLifecycleOwner, { list ->
             viewAdapter.alert(list?: listOf())
         })
         onRefresh()
@@ -96,7 +93,7 @@ class MtrLineStatusFragment: Fragment(), SwipeRefreshLayout.OnRefreshListener {
                 val intent = Intent(context, ImageActivity::class.java)
                 intent.putExtra(ImageActivity.IMAGE_TITLE, "港鐵車務狀況 (運輸署)")
                 intent.putExtra(ImageActivity.IMAGE_URL, "http://210.3.170.180/mtr_status/MTR.jpg")
-                intent.putExtra(ImageActivity.COLOUR, ContextCompat.getColor(context!!, R.color.black))
+                intent.putExtra(ImageActivity.COLOUR, ContextCompat.getColor(requireContext(), R.color.black))
                 startActivity(intent)
                 return true
             }
@@ -111,6 +108,9 @@ class MtrLineStatusFragment: Fragment(), SwipeRefreshLayout.OnRefreshListener {
         } else {
             snackbar.show()
         }
-        WorkManager.getInstance().enqueue(OneTimeWorkRequest.Builder(MtrLineWorker::class.java).addTag("RouteList").build())
+//        WorkManager.getInstance().enqueue(
+//                OneTimeWorkRequest.Builder(MtrTrainSpecialNewsWorker::class.java)
+//                        .addTag("MtrTrainSpecialNews").build())
+//        WorkManager.getInstance().enqueue(OneTimeWorkRequest.Builder(MtrLineWorker::class.java).addTag("RouteList").build())
     }
 }

@@ -7,7 +7,6 @@ import android.app.Service
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.lifecycle.LifecycleService
-import androidx.lifecycle.Observer
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -75,7 +74,7 @@ class EtaService : LifecycleService() {
                     routeNo,
                     routeSequence,
                     extras.getString(C.EXTRA.ROUTE_SERVICE_TYPE, "")))
-            if (arrayListOf(C.PROVIDER.AESBUS, C.PROVIDER.LRTFEEDER).contains(companyCode) && routeStopList.size > 0) {
+            if (arrayListOf(C.PROVIDER.LRTFEEDER).contains(companyCode) && routeStopList.size > 0) {
                 // require only one request to get all results
                 val routeStop = routeStopList[0]
                 routeStopList.clear()
@@ -125,7 +124,7 @@ class EtaService : LifecycleService() {
                 notifyUpdate(routeStop, C.EXTRA.UPDATING, widgetId, notificationId)
                 var workerRequest: OneTimeWorkRequest? = null
                 when (routeStop.companyCode) {
-                    C.PROVIDER.AESBUS, C.PROVIDER.LRTFEEDER -> {
+                    C.PROVIDER.LRTFEEDER -> {
                         workerRequest = OneTimeWorkRequest.Builder(AESBusEtaWorker::class.java)
                                 .addTag(tag).setInputData(data).build()
                     }
@@ -156,7 +155,7 @@ class EtaService : LifecycleService() {
                 if (workerRequest != null) {
                     workerRequestList.add(workerRequest)
                     WorkManager.getInstance().getWorkInfoByIdLiveData(workerRequest.id)
-                            .observe(this, Observer { workInfo ->
+                            .observe(this, { workInfo ->
                                 if (workInfo.state.isFinished) isFinishedCount += 1
                                 if (workInfo?.state == WorkInfo.State.FAILED) {
                                     notifyUpdate(routeStop, C.EXTRA.FAIL, widgetId, notificationId)

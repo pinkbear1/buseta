@@ -1,7 +1,6 @@
 package com.alvinhkh.buseta.kmb.ui
 
-import androidx.lifecycle.Observer
-import androidx.lifecycle.ViewModelProviders
+import androidx.lifecycle.ViewModelProvider
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -29,7 +28,7 @@ class KmbBBIFragment: Fragment() {
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?,
                               savedInstanceState: Bundle?): View? {
         val rootView = inflater.inflate(R.layout.fragment_list, container, false)
-        route = arguments!!.getParcelable(C.EXTRA.ROUTE_OBJECT)?:Route()
+        route = requireArguments().getParcelable(C.EXTRA.ROUTE_OBJECT)?:Route()
         val routeNo: String = route.name?:""
         val routeBound: String = route.sequence?:""
         if (routeNo.isEmpty() || routeBound.isEmpty()) {
@@ -49,14 +48,14 @@ class KmbBBIFragment: Fragment() {
             viewAdapter = KmbBBIViewAdapter()
             adapter = viewAdapter
         }
-        val viewModel = ViewModelProviders.of(this@KmbBBIFragment).get(KmbBBIViewModel::class.java)
+        val viewModel = ViewModelProvider(this@KmbBBIFragment).get(KmbBBIViewModel::class.java)
         rootView.findViewById<TextInputLayout>(R.id.search_edittext_layout)?.visibility = View.VISIBLE
         with(rootView.findViewById<TextInputEditText>(R.id.search_edittext)) {
             addTextChangedListener(object : TextWatcher {
                 override fun afterTextChanged(p0: Editable?) {
                     val t = p0?.replace("[^a-zA-Z0-9]*".toRegex(), "")?.toUpperCase(Locale.ENGLISH)
                     val liveData = viewModel.liveData(routeNo, routeBound, t ?: "")
-                    liveData.observe(this@KmbBBIFragment, Observer { items ->
+                    liveData.observe(viewLifecycleOwner, { items ->
                         swipeRefreshLayout?.isRefreshing = true
                         if (items.isNullOrEmpty()) {
                             viewAdapter?.clear()
@@ -78,7 +77,7 @@ class KmbBBIFragment: Fragment() {
             })
         }
         val liveData = viewModel.liveData(routeNo, routeBound, "")
-        liveData.observe(this@KmbBBIFragment, Observer { items ->
+        liveData.observe(viewLifecycleOwner, { items ->
             swipeRefreshLayout?.isRefreshing = true
             if (items.isNullOrEmpty()) {
                 viewAdapter?.clear()

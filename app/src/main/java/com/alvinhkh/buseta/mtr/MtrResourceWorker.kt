@@ -7,6 +7,7 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.alvinhkh.buseta.C
 import com.alvinhkh.buseta.utils.ZipUtil
+import com.google.firebase.remoteconfig.FirebaseRemoteConfig
 import okhttp3.ResponseBody
 import timber.log.Timber
 import java.io.BufferedInputStream
@@ -16,40 +17,15 @@ import java.io.FileOutputStream
 class MtrResourceWorker(context : Context, params : WorkerParameters)
     : Worker(context, params) {
 
+    private val firebaseRemoteConfig = FirebaseRemoteConfig.getInstance()
+
     override fun doWork(): Result {
         val manualUpdate = inputData.getBoolean(C.EXTRA.MANUAL, false)
-        val companyCode = inputData.getString(C.EXTRA.COMPANY_CODE)?:C.PROVIDER.AESBUS
+        val companyCode = inputData.getString(C.EXTRA.COMPANY_CODE)?:C.PROVIDER.LRTFEEDER
         val outputData = Data.Builder()
                 .putBoolean(C.EXTRA.MANUAL, manualUpdate)
                 .putString(C.EXTRA.COMPANY_CODE, companyCode)
                 .build()
-
-        if (companyCode.isEmpty() || companyCode == C.PROVIDER.AESBUS)
-        {
-            try {
-                val mtrMobService = MtrService.mob.create(MtrService::class.java)
-//            val response1 = mtrMobService.zipResources().execute()
-//            val mtrMobileVersionCheck = response1.body()?:return Result.failure(outputData)
-//            val aesDatabaseFileUrl = mtrMobileVersionCheck.resources?.aes?.url?:return Result.failure(outputData)
-                val aesDatabaseFileUrl = "http://mavmapp1044.azurewebsites.net/sil_data/E_AES_20190328.zip"
-                val uri = Uri.parse(aesDatabaseFileUrl)
-                applicationContext.deleteDatabase("E_AES.db")
-                val fileName = uri.lastPathSegment?:return Result.failure(outputData)
-                val response2 = mtrMobService.downloadFile(aesDatabaseFileUrl).execute()
-                val body = response2.body()?:return Result.failure(outputData)
-
-                val zipFile = downloadFile(body, fileName)
-                if (zipFile.exists()) {
-                    if (zipFile.name.endsWith(".zip")) {
-                        ZipUtil.decompress(zipFile)
-                    }
-                    zipFile.deleteOnExit()
-                }
-            } catch (e: Exception) {
-                Timber.e(e)
-                return Result.failure(outputData)
-            }
-        }
 
         if (companyCode.isEmpty() || companyCode == C.PROVIDER.LRTFEEDER) {
             try {
@@ -57,7 +33,10 @@ class MtrResourceWorker(context : Context, params : WorkerParameters)
 //            val response1 = mtrMobService.zipResources().execute()
 //            val mtrMobileVersionCheck = response1.body()?:return Result.failure(outputData)
 //            val busDatabaseFileUrl = mtrMobileVersionCheck.resources?.mtrBus?.url?:return Result.failure(outputData)
-                val busDatabaseFileUrl = "http://mavmapp1044.azurewebsites.net/sil_data/E_Bus_20191209.zip"
+                val busDatabaseFileUrl = firebaseRemoteConfig.getString("mtr_bus_database_url")
+                if (busDatabaseFileUrl.isEmpty()) {
+                    return Result.failure(outputData)
+                }
                 val uri = Uri.parse(busDatabaseFileUrl)
                 applicationContext.deleteDatabase("E_Bus.db")
                 val fileName = uri.lastPathSegment ?: return Result.failure(outputData)

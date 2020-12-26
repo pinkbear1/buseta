@@ -1,8 +1,7 @@
 package com.alvinhkh.buseta.route.ui
 
 import android.Manifest
-import androidx.lifecycle.Observer
-import androidx.lifecycle.ViewModelProviders
+import androidx.lifecycle.ViewModelProvider
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
@@ -46,6 +45,7 @@ import com.google.android.gms.location.LocationServices
 import com.alvinhkh.buseta.utils.ConnectivityUtil
 import com.alvinhkh.buseta.utils.PreferenceUtil
 import com.google.android.gms.maps.model.Marker
+import timber.log.Timber
 import java.util.UUID
 
 
@@ -83,6 +83,7 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
 
     private val initLoadRunnable = object : Runnable {
         override fun run() {
+            Timber.d("initLoadRunnable")
             if (view != null) {
                 if (userVisibleHint) {
                     refreshHandler.post(refreshRunnable)
@@ -106,6 +107,7 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
 
     protected val adapterUpdateRunnable: Runnable = object : Runnable {
         override fun run() {
+            Timber.d("adapterUpdateRunnable")
             viewAdapter?.notifyDataSetChanged()
             adapterUpdateHandler.postDelayed(this, 30000)  // refresh every 30 sec
         }
@@ -117,10 +119,13 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
 
     protected val refreshRunnable: Runnable = object : Runnable {
         override fun run() {
+            Timber.d("refreshRunnable: %s", refreshInterval)
             if (refreshInterval > 0) {
                 onRefresh()
                 viewAdapter?.notifyDataSetChanged()
                 refreshHandler.postDelayed(this, (refreshInterval * 1000).toLong())
+            } else {
+                refreshHandler.removeCallbacksAndMessages(null)
             }
         }
     }
@@ -142,10 +147,10 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
         super.onCreate(savedInstanceState)
         setHasOptionsMenu(true)
         if (arguments != null) {
-            route = arguments!!.getParcelable(C.EXTRA.ROUTE_OBJECT)
+            route = requireArguments().getParcelable(C.EXTRA.ROUTE_OBJECT)
         }
         if (context == null) return
-        PreferenceManager.getDefaultSharedPreferences(context!!)
+        PreferenceManager.getDefaultSharedPreferences(requireContext())
                 .registerOnSharedPreferenceChangeListener(this)
     }
 
@@ -159,9 +164,9 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
         emptyText = rootView.findViewById(R.id.empty_text)
         emptyText.setText(R.string.message_loading)
         if (fragmentManager == null) return rootView
-        if (ActivityCompat.checkSelfPermission(context!!, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-                || ActivityCompat.checkSelfPermission(context!!, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            LocationServices.getFusedLocationProviderClient(context!!)
+        if (ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                || ActivityCompat.checkSelfPermission(requireContext(), Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            LocationServices.getFusedLocationProviderClient(requireContext())
                     .lastLocation
                     .addOnSuccessListener { location -> if (location != null) viewAdapter?.setCurrentLocation(location) }
         }
@@ -181,11 +186,11 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
         recyclerView?.run {
             setHasFixedSize(true)
             layoutManager = LinearLayoutManager(context)
-            viewAdapter = RouteStopListViewAdapter(activity!!, route?:Route())
+            viewAdapter = RouteStopListViewAdapter(requireActivity(), route?:Route())
             adapter = viewAdapter
-            viewModel = ViewModelProviders.of(this@RouteStopListFragmentAbstract).get(RouteStopListViewModel::class.java)
+            viewModel = ViewModelProvider(this@RouteStopListFragmentAbstract).get(RouteStopListViewModel::class.java)
             viewModel.liveData(route?.companyCode?:"", route?.code?:"", route?.name?:"", route?.sequence?:"", route?.serviceType?:"")
-                    .observe(this@RouteStopListFragmentAbstract, Observer<MutableList<RouteStop>> { stops ->
+                    .observe(viewLifecycleOwner, { stops ->
                         if (stops != null) {
                             val dataType = if (route?.companyCode == C.PROVIDER.MTR) TYPE_RAILWAY_STATION else TYPE_ROUTE_STOP
                             if (!swipeRefreshLayout.isRefreshing) {
@@ -196,9 +201,9 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
                                 viewAdapter?.addHeader(route?.description?:"")
                             }
 
-                            val preferences = PreferenceManager.getDefaultSharedPreferences(context!!)
+                            val preferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
                             refreshInterval = preferences.getString("load_eta", "0")?.toInt()?:0
-                            if (!listOf(C.PROVIDER.AESBUS, C.PROVIDER.LRTFEEDER).contains(route?.companyCode) && refreshInterval <= 0) {
+                            if (!listOf(C.PROVIDER.LRTFEEDER).contains(route?.companyCode) && refreshInterval <= 0) {
                                 activity?.findViewById<FloatingActionButton>(R.id.fab)?.show()
                             }
 
@@ -207,7 +212,6 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
 
                                 var isScrollToPosition: Boolean? = false
                                 var scrollToPosition: Int? = 0
-                                refreshHandler.post(refreshRunnable)
                                 if (viewAdapter?.itemCount?:0 > 0) {
                                     if ((route != null
                                                     && route?.companyCode != null && route?.companyCode == navToStop?.companyCode
@@ -257,10 +261,10 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
                         }
                         if (swipeRefreshLayout.isRefreshing) {
                             swipeRefreshLayout.isRefreshing = false
-                            initLoadHandler.post(initLoadRunnable)
                         }
                     })
         }
+        initLoadHandler.post(initLoadRunnable)
 
         return rootView
     }
@@ -273,9 +277,9 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
     override fun onResume() {
         super.onResume()
         if (context != null) {
-            val preferences = PreferenceManager.getDefaultSharedPreferences(context!!)
+            val preferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
             refreshInterval = preferences.getString("load_eta", "0")?.toInt()?:0
-            if (!listOf(C.PROVIDER.AESBUS, C.PROVIDER.LRTFEEDER).contains(route?.companyCode) && refreshInterval <= 0) {
+            if (!listOf(C.PROVIDER.LRTFEEDER).contains(route?.companyCode) && refreshInterval <= 0) {
                 activity?.findViewById<FloatingActionButton>(R.id.fab)?.show()
             }
         }
@@ -310,7 +314,7 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
         initLoadHandler.removeCallbacksAndMessages(null)
         refreshHandler.removeCallbacksAndMessages(null)
         if (context != null) {
-            PreferenceManager.getDefaultSharedPreferences(context!!)
+            PreferenceManager.getDefaultSharedPreferences(requireContext())
                     .unregisterOnSharedPreferenceChangeListener(this)
         }
         super.onDestroy()
@@ -349,7 +353,7 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
                 intent.putExtra(C.EXTRA.ROUTE_NO, route?.name)
                 intent.putExtra(C.EXTRA.ROUTE_SEQUENCE, route?.sequence)
                 intent.putExtra(C.EXTRA.ROUTE_SERVICE_TYPE, route?.serviceType)
-                context!!.startService(intent)
+                requireContext().startService(intent)
             } catch (ignored: Throwable) {
             }
         }
@@ -358,7 +362,7 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
     private fun loadStopList(route: Route): Boolean {
         val companyCode = route.companyCode?:""
         when (companyCode) {
-            C.PROVIDER.AESBUS, C.PROVIDER.LRTFEEDER, C.PROVIDER.MTR, C.PROVIDER.NLB, C.PROVIDER.GMB901 -> {
+            C.PROVIDER.LRTFEEDER, C.PROVIDER.MTR, C.PROVIDER.NLB, C.PROVIDER.GMB901 -> {
                 viewAdapter?.notifyDataSetChanged()
                 return true
             }
@@ -377,7 +381,7 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
         val request = when (companyCode) {
             C.PROVIDER.KMB, C.PROVIDER.LWB -> {
                 OneTimeWorkRequest.Builder(
-                        if (PreferenceUtil.isUsingKmbWebApi(context!!)) {
+                        if (PreferenceUtil.isUsingKmbWebApi(requireContext())) {
                             KmbStopListWorker::class.java
                         } else {
                             LwbStopListWorker::class.java
@@ -388,7 +392,7 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
                         .build()
             }
             C.PROVIDER.NWST, C.PROVIDER.NWFB, C.PROVIDER.CTB -> {
-                if (!PreferenceUtil.isUsingNwstDataGovHkApi(context!!)) {
+                if (!PreferenceUtil.isUsingNwstDataGovHkApi(requireContext())) {
                     OneTimeWorkRequest.Builder(NwstStopListWorker::class.java)
                             .setInputData(data)
                             .addTag(tag)
@@ -409,7 +413,7 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
         requestId = request.id
         WorkManager.getInstance().enqueue(request)
         WorkManager.getInstance().getWorkInfoByIdLiveData(request.id)
-                .observe(this, Observer { workInfo ->
+                .observe(this, { workInfo ->
                     if (workInfo?.state == WorkInfo.State.FAILED) {
                         if (!ConnectivityUtil.isConnected(context)) {
                             showEmptyMessage(getString(R.string.message_no_internet_connection))
@@ -448,7 +452,7 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
         }
         if (viewAdapter?.itemCount?:0 > 0) {
             if (!s.isNullOrEmpty()) {
-                Snackbar.make(view?.rootView?.findViewById(R.id.coordinator_layout)?:view!!, s, Snackbar.LENGTH_INDEFINITE).show()
+                Snackbar.make(view?.rootView?.findViewById(R.id.coordinator_layout)?:requireView(), s, Snackbar.LENGTH_INDEFINITE).show()
             }
         } else {
             recyclerView?.visibility = View.GONE
@@ -460,20 +464,20 @@ abstract class RouteStopListFragmentAbstract : Fragment(),  SwipeRefreshLayout.O
 
     private fun startLocationUpdates() {
         if (context == null || locationCallback == null) return
-        if (ActivityCompat.checkSelfPermission(context!!,
-                        Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(context!!,
+        if (ActivityCompat.checkSelfPermission(requireContext(),
+                        Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(requireContext(),
                         Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             val locationRequest = LocationRequest.create()
             locationRequest.interval = 10000
             locationRequest.fastestInterval = (10000 / 2).toLong()
             locationRequest.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-            LocationServices.getFusedLocationProviderClient(context!!)
+            LocationServices.getFusedLocationProviderClient(requireContext())
                     .requestLocationUpdates(locationRequest, locationCallback!!, null/* Looper */)
         }
     }
 
     private fun stopLocationUpdates() {
         if (context == null || locationCallback == null) return
-        LocationServices.getFusedLocationProviderClient(context!!).removeLocationUpdates(locationCallback!!)
+        LocationServices.getFusedLocationProviderClient(requireContext()).removeLocationUpdates(locationCallback!!)
     }
 }
